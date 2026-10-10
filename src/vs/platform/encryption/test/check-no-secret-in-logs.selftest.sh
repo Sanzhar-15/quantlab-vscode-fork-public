@@ -150,6 +150,19 @@ export function parseKey(key: string): { extensionId: string; key: string } | un
 TS
 }
 
+# subst_all <var> <placeholder> <replacement>: replaces every literal <placeholder> in the variable <var> with <replacement>
+# verbatim. Not `${t//pat/"$r"}`: bash 3.2 (macOS /bin/bash) keeps the quotes around the replacement as literal characters
+# (and bash 5.2 treats an unquoted `&` there specially); prefix/suffix removal with a quoted pattern is the same on both.
+subst_all() {
+	local rest="${!1}" ph="$2" repl="$3" out="" pre
+	while [[ "$rest" == *"$ph"* ]]; do
+		pre=${rest%%"$ph"*}
+		out=$out$pre$repl
+		rest=${rest#*"$ph"}
+	done
+	printf -v "$1" '%s' "$out$rest"
+}
+
 # build <dir> <E> <DEC> <ERR> <K> <TOP> <HELPER>: writes the fixture tree and the gate copy.
 build() {
 	local dir="$1"
@@ -163,12 +176,12 @@ build() {
 			"$SEC") t="$(sec_text)" ;;
 			*) t="$(plain_text)" ;;
 		esac
-		t="${t//@@E@@/"$2"}"
-		t="${t//@@DEC@@/"$3"}"
-		t="${t//@@ERR@@/"$4"}"
-		t="${t//@@K@@/"$5"}"
-		t="${t//@@TOP@@/"$6"}"
-		t="${t//@@HELPER@@/"$7"}"
+		subst_all t @@E@@ "$2"
+		subst_all t @@DEC@@ "$3"
+		subst_all t @@ERR@@ "$4"
+		subst_all t @@K@@ "$5"
+		subst_all t @@TOP@@ "$6"
+		subst_all t @@HELPER@@ "$7"
 		printf '%s\n' "$t" >"$dir/$f" || return 2
 	done
 }
