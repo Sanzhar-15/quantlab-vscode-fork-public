@@ -104,7 +104,11 @@ if ! command -v node >/dev/null; then
 	echo "node not found on PATH: the caught-error walker cannot run (rc 2)"
 	exit 2
 fi
-walker_out="$(node - "$ROOT" "${TARGETS[@]}" <<'WALKER'
+# The walker source lives in a function body, not inside a `$( ... )`: bash 3.2 (macOS /bin/bash) scans a heredoc inside a
+# command substitution for balanced backticks and quotes, and the walker's template literals make that scan fail
+# ("unexpected EOF while looking for matching ``'"). A function body is read as a plain heredoc by 3.2 and 5.x alike.
+run_walker() {
+node - "$@" <<'WALKER'
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -525,7 +529,8 @@ try {
 	throw err;
 }
 WALKER
-)"
+}
+walker_out="$(run_walker "$ROOT" "${TARGETS[@]}")"
 walker_rc=$?
 if [ "$walker_rc" -ne 0 ]; then
 	printf '%s\n' "$walker_out"
