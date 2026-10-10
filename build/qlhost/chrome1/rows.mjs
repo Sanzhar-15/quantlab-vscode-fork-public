@@ -124,10 +124,13 @@ async function main() {
 			h(r.params, r.sessionId).catch((e) => fail(`${r.method} handler: ${describe(e)}`));
 		}
 	};
-	const cdp = (method, params, sessionId) => new Promise((res, rej) => {
+	// timeoutMs null = no per-command deadline: the caller bounds the wait where the answer is needed.
+	const cdp = (method, params, sessionId, timeoutMs = 10000) => new Promise((res, rej) => {
 		const id = ++seq; pend.set(id, { res, rej, method });
 		sock.send(JSON.stringify(sessionId === undefined ? { id, method, params } : { id, method, params, sessionId }));
-		setTimeout(() => { if (pend.has(id)) { pend.delete(id); rej(new Error(`${method} timed out after 10 s`)); } }, 10000);
+		if (timeoutMs !== null) {
+			setTimeout(() => { if (pend.has(id)) { pend.delete(id); rej(new Error(`${method} timed out after ${timeoutMs / 1000} s`)); } }, timeoutMs);
+		}
 	});
 
 	// Coverage: no workbench page may exist before the recorder is in place.
@@ -142,17 +145,28 @@ async function main() {
 	}
 	handlers.set('Target.targetCreated', async (p) => { urls.set(p.targetInfo.targetId, p.targetInfo.url); });
 	handlers.set('Target.targetInfoChanged', async (p) => { urls.set(p.targetInfo.targetId, p.targetInfo.url); });
+	// Every attach is recorded on arrival; `attached` maps a page target to its session and to the state of its recorder commands.
+	// The recorder commands are sent before the resume (the session runs them in order, so the recorder precedes every document
+	// script) and carry no per-command deadline: a page created without a document (a blank WebContents the host never loads)
+	// answers no Page command at all, and such a page is never judged. The workbench target's answer is required, bounded, below.
+	R.attach = {};
 	handlers.set('Target.attachedToTarget', async (p, parent) => {
-		const sid = p.sessionId;
+		const sid = p.sessionId; const id = p.targetInfo.targetId;
+		const a = R.attach[id] = { type: p.targetInfo.type, url: p.targetInfo.url, waiting: p.waitingForDebugger, parentSession: String(parent), at: new Date().toISOString() };
+		R.attachLog.push(`${p.targetInfo.type} ${p.targetInfo.url} waiting=${p.waitingForDebugger} parentSession=${String(parent)}`);
+		const sent = [];
 		if (p.targetInfo.type === 'page') {
-			await cdp('Page.enable', {}, sid);
-			await cdp('Page.addScriptToEvaluateOnNewDocument', { source: RECORDER }, sid);
-			attached.set(p.targetInfo.targetId, sid);
+			const state = { sid, recorder: 'sent' }; attached.set(id, state); a.recorder = 'sent';
+			sent.push(Promise.all([
+				cdp('Page.enable', {}, sid, null),
+				cdp('Page.addScriptToEvaluateOnNewDocument', { source: RECORDER }, sid, null),
+			]).then(() => { state.recorder = a.recorder = 'answered'; a.recorderAnsweredAt = new Date().toISOString(); }));
 		}
 		if (p.waitingForDebugger) {
-			await cdp('Runtime.runIfWaitingForDebugger', {}, sid);
+			a.resume = 'sent';
+			sent.push(cdp('Runtime.runIfWaitingForDebugger', {}, sid, null).then(() => { a.resume = 'answered'; }));
 		}
-		R.attachLog.push(`${p.targetInfo.type} ${p.targetInfo.url} waiting=${p.waitingForDebugger} parentSession=${String(parent)}`);
+		await Promise.all(sent);
 	});
 	await cdp('Target.setDiscoverTargets', { discover: true });
 	await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
@@ -170,7 +184,9 @@ async function main() {
 	if (!attached.has(wbTarget)) {
 		throw new Error(`coverage: the workbench page ${urls.get(wbTarget)} was not attached at start, so the recorder is not in it`);
 	}
-	const sid = attached.get(wbTarget);
+	const wbState = attached.get(wbTarget);
+	await until('the workbench target to answer its recorder commands', 10000, () => wbState.recorder === 'answered');
+	const sid = wbState.sid;
 	const ev = async (expr) => {
 		const r = await cdp('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }, sid);
 		if (r.exceptionDetails) {
