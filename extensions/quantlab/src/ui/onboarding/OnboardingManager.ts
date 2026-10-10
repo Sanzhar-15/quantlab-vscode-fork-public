@@ -22,10 +22,9 @@ export class OnboardingManager {
 	private state: OnboardingState;
 
 	private constructor(private readonly context: vscode.ExtensionContext) {
+		// F-QL-CHROME-1 G5: the first run opens no Welcome tab (it painted an empty webview tab on the PREVIEW pack). The
+		// QuantLab onboarding view (Q-9) replaces it later; until then `showWelcome` runs only when called.
 		this.state = this.restoreState();
-		if (!this.state.hasSeenWelcome) {
-			void this.showWelcome();
-		}
 	}
 
 	static initialize(context: vscode.ExtensionContext): OnboardingManager {
@@ -71,7 +70,7 @@ export class OnboardingManager {
 		this.persistState();
 	}
 
-	private async showWelcome(): Promise<void> {
+	async showWelcome(): Promise<void> {
 		const action = await WelcomeModal.show(this.context);
 		if (this.disposed) { return; }
 		this.state = {
