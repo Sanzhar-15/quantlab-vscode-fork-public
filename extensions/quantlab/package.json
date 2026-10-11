@@ -1377,6 +1377,18 @@
           "group": "1_run@3"
         }
       ],
+      "editor/title": [
+        {
+          "command": "quantlab.openAsAction",
+          "when": "resourceLangId == python",
+          "group": "navigation@10"
+        },
+        {
+          "command": "quantlab.openAsChart",
+          "when": "resourceLangId == python",
+          "group": "navigation@11"
+        }
+      ],
       "editor/title/context": [
         {
           "command": "quantlab.openAsChart",
@@ -1681,8 +1693,6 @@
     },
     "configurationDefaults": {
       "workbench.secondarySideBar.defaultVisibility": "hidden",
-      "workbench.activityBar.location": "top",
-      "workbench.sideBar.location": "left",
       "python.languageServer": "None"
     }
   },
