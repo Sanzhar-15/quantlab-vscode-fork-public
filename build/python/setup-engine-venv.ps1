@@ -16,7 +16,12 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# Windows PowerShell 5.1 strips embedded double quotes from arguments passed to a native program (`print("x")` reaches
+# python as `print(x)`), so an argument holding a double quote is refused here instead of silently changing meaning.
 function Invoke-Checked([string]$Exe, [string[]]$Arguments) {
+	foreach ($a in $Arguments) {
+		if ($a.Contains('"')) { throw "argument holds a double quote, which Windows PowerShell 5.1 strips for native programs: $a" }
+	}
 	& $Exe @Arguments
 	if ($LASTEXITCODE -ne 0) {
 		throw "$Exe $($Arguments -join ' ') exited with $LASTEXITCODE"
@@ -38,5 +43,5 @@ Invoke-Checked $Python @('-m', 'venv', $Venv)
 $venvPython = Join-Path $Venv 'Scripts\python.exe'
 Invoke-Checked $venvPython @('-m', 'pip', 'install', '--disable-pip-version-check', '--no-input', '--require-hashes', '--only-binary', ':all:', '--no-deps', '-r', $lock)
 Invoke-Checked $venvPython @('-m', 'pip', 'check')
-Invoke-Checked $venvPython @('-c', 'import PyInstaller, numpy, pandas, pyarrow, libcst, cryptography, argon2, psutil, yaml, alpaca, httpx, jsonrpclib; print("imports ok")')
+Invoke-Checked $venvPython @('-c', 'import PyInstaller, numpy, pandas, pyarrow, libcst, cryptography, argon2, psutil, yaml, alpaca, httpx, jsonrpclib; print(''imports ok'')')
 Write-Output "QUANTLAB_ENGINE_PYTHON=$venvPython"
